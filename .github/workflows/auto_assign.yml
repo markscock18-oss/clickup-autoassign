@@ -1,0 +1,27 @@
+name: ClickUp Auto Assigner
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'  # Every 30 min keeps a private repo inside the free 2,000 Actions min/month
+  workflow_dispatch:
+
+# Never run two copies at once (a delayed run could otherwise overlap the next one)
+concurrency:
+  group: clickup-auto-assign
+  cancel-in-progress: false
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests
+      - run: python main.py
+        env:
+          CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
+          CLICKUP_LIST_ID: '901525004358'
+          RUN_SECONDS: '25'  # short run so each job is billed as 1 minute
