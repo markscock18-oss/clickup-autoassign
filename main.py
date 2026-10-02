@@ -8,6 +8,9 @@ API_TOKEN = os.environ["CLICKUP_TOKEN"]
 LIST_ID = os.getenv("CLICKUP_LIST_ID", "901525004358")
 POLL_SECONDS = float(os.getenv("POLL_SECONDS", "3"))
 RUN_SECONDS = float(os.getenv("RUN_SECONDS", "240"))
+# Only tasks created after this moment (Unix ms) are claimed, so the old backlog is never touched
+CREATED_AFTER_MS = int(os.environ["CREATED_AFTER_MS"])
+DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 
 session = requests.Session()
 session.headers.update({"Authorization": API_TOKEN, "Content-Type": "application/json"})
@@ -34,15 +37,24 @@ def get_my_id():
 
 
 def unassigned_tasks():
-    """Yield open, unassigned tasks in the list, following pagination."""
+    """Yield new, open, unassigned top-level tasks (no subtasks), following pagination."""
     page = 0
     while True:
         data = call(
             "GET",
             f"/list/{LIST_ID}/task",
-            params={"page": page, "include_closed": "false", "subtasks": "true"},
+            params={
+                "page": page,
+                "include_closed": "false",
+                "subtasks": "false",
+                "date_created_gt": CREATED_AFTER_MS,
+            },
         )
         for task in data.get("tasks", []):
+            if task.get("parent"):
+                continue
+            if int(task.get("date_created") or 0) <= CREATED_AFTER_MS:
+                continue
             if not task.get("assignees"):
                 yield task
         if data.get("last_page", True):
@@ -52,13 +64,16 @@ def unassigned_tasks():
 
 def main():
     my_id = get_my_id()
-    print(f"[+] Watching list {LIST_ID} for {RUN_SECONDS:.0f}s")
+    print(f"[+] Watching list {LIST_ID} for {RUN_SECONDS:.0f}s (dry run: {DRY_RUN})", flush=True)
     end_time = time.time() + RUN_SECONDS
     while time.time() < end_time:
         try:
             for task in unassigned_tasks():
+                if DRY_RUN:
+                    print(f"[DRY RUN] Would assign '{task['name']}' ({task['id']})", flush=True)
+                    continue
                 call("PUT", f"/task/{task['id']}", json={"assignees": {"add": [my_id]}})
-                print(f"[SUCCESS] Assigned '{task['name']}' ({task['id']})")
+                print(f"[SUCCESS] Assigned '{task['name']}' ({task['id']})", flush=True)
         except requests.RequestException as e:
             print(f"[-] Error: {e}")
         time.sleep(POLL_SECONDS)

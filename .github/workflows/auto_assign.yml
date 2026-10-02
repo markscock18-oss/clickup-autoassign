@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '*/30 * * * *'  # Every 30 min keeps a private repo inside the free 2,000 Actions min/month
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only list what would be assigned, change nothing'
+        type: boolean
+        default: true
 
 # Never run two copies at once (a delayed run could otherwise overlap the next one)
 concurrency:
@@ -24,4 +29,6 @@ jobs:
         env:
           CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
           CLICKUP_LIST_ID: '901525004358'
+          CREATED_AFTER_MS: '1790940825116'  # 2026-10-02 11:33 UTC: only orders created after this are claimed
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
           RUN_SECONDS: '25'  # short run so each job is billed as 1 minute
