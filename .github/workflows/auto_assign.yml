@@ -2,7 +2,7 @@ name: ClickUp Auto Assigner
 
 on:
   schedule:
-    - cron: '*/10 * * * *'  # Every 10 min (~4,300 Actions min/month)
+    - cron: '*/5 * * * *'  # GitHub's minimum; each run then polls every second for ~5 min
   workflow_dispatch:
     inputs:
       dry_run:
@@ -18,7 +18,7 @@ concurrency:
 jobs:
   run-script:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -31,4 +31,5 @@ jobs:
           CLICKUP_LIST_ID: '901525004358'
           CREATED_AFTER_MS: '1790940825116'  # 2026-10-02 11:33 UTC: only orders created after this are claimed
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
-          RUN_SECONDS: '25'  # short run so each job is billed as 1 minute
+          POLL_SECONDS: '1'
+          RUN_SECONDS: '285'  # keep polling until the next scheduled run is due
