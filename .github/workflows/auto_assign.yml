@@ -2,7 +2,7 @@ name: ClickUp Auto Assigner
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # GitHub's minimum; each run then polls every second for ~5 min
+    - cron: '*/15 * * * *'  # keeps a run queued so it starts as soon as the current one ends
   workflow_dispatch:
     inputs:
       dry_run:
@@ -18,7 +18,7 @@ concurrency:
 jobs:
   run-script:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -32,4 +32,4 @@ jobs:
           CREATED_AFTER_MS: '1790940825116'  # 2026-10-02 11:33 UTC: only orders created after this are claimed
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
           POLL_SECONDS: '1'
-          RUN_SECONDS: '285'  # keep polling until the next scheduled run is due
+          RUN_SECONDS: '20700'  # ~5h45m, just under GitHub's 6-hour job limit
