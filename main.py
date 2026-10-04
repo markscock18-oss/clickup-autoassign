@@ -37,7 +37,7 @@ def get_my_id():
 
 
 def unassigned_tasks():
-    """Yield new, open, unassigned top-level tasks (no subtasks), following pagination."""
+    """Yield new, open, unassigned top-level orders named "#...", following pagination."""
     page = 0
     while True:
         data = call(
@@ -53,6 +53,8 @@ def unassigned_tasks():
         for task in data.get("tasks", []):
             if task.get("parent"):
                 continue
+            if not task.get("name", "").strip().startswith("#"):
+                continue  # real orders are named like "#3054"
             if int(task.get("date_created") or 0) <= CREATED_AFTER_MS:
                 continue
             if not task.get("assignees"):
