@@ -85,25 +85,30 @@ def main():
     my_id = get_my_id()
     print(f"[+] Watching list {LIST_ID} for {RUN_SECONDS:.0f}s (dry run: {DRY_RUN})", flush=True)
     end_time = time.time() + RUN_SECONDS
+    busy = True  # check your own orders first
     waiting_on = None
     while time.time() < end_time:
         try:
-            # Claim at most one order per check, and only while you have none still in "new order".
-            # Your own orders are only looked up when there is something to claim, to save API calls.
-            task = next(unassigned_tasks(), None)
-            if task:
-                busy = current_open_order(my_id)
-                if busy:
-                    if waiting_on != busy["id"]:
-                        print(f"[WAIT] '{busy['name']}' is still '{BUSY_STATUS}', skipping new orders", flush=True)
-                        waiting_on = busy["id"]
-                    time.sleep(4)  # this check costs 2 API calls, so slow down to stay under the rate limit
-                elif DRY_RUN:
+            # One API call per check: while busy, only watch your open order; while free, only watch for new ones.
+            if busy:
+                open_order = current_open_order(my_id)
+                busy = open_order is not None
+                if busy and waiting_on != open_order["id"]:
+                    print(f"[WAIT] '{open_order['name']}' is still '{BUSY_STATUS}', not claiming new orders", flush=True)
+                    waiting_on = open_order["id"]
+                elif not busy and waiting_on:
+                    print("[+] Free again, claiming new orders", flush=True)
+                    waiting_on = None
+            else:
+                task = next(unassigned_tasks(), None)
+                if task and current_open_order(my_id):
+                    busy = True  # you picked up an order yourself in the meantime
+                elif task and DRY_RUN:
                     print(f"[DRY RUN] Would assign '{task['name']}' ({task['id']})", flush=True)
-                else:
+                elif task:
                     call("PUT", f"/task/{task['id']}", json={"assignees": {"add": [my_id]}})
                     print(f"[SUCCESS] Assigned '{task['name']}' ({task['id']})", flush=True)
-                    waiting_on = None
+                    busy = True  # the order you just got starts in "new order"
         except requests.RequestException as e:
             print(f"[-] Error: {e}")
         time.sleep(POLL_SECONDS)
