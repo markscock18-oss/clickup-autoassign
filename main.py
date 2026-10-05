@@ -11,6 +11,8 @@ RUN_SECONDS = float(os.getenv("RUN_SECONDS", "240"))
 # Only tasks created after this moment (Unix ms) are claimed, so the old backlog is never touched
 CREATED_AFTER_MS = int(os.environ["CREATED_AFTER_MS"])
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
+# While you have an order still in this status, don't claim another one
+BUSY_STATUS = os.getenv("BUSY_STATUS", "new order").lower()
 
 session = requests.Session()
 session.headers.update({"Authorization": API_TOKEN, "Content-Type": "application/json"})
@@ -64,18 +66,44 @@ def unassigned_tasks():
         page += 1
 
 
+def current_open_order(my_id):
+    """Return your "#" order that is still in BUSY_STATUS, or None if you're free."""
+    data = call(
+        "GET",
+        f"/list/{LIST_ID}/task",
+        params={"assignees[]": my_id, "include_closed": "false", "subtasks": "false"},
+    )
+    for task in data.get("tasks", []):
+        if task.get("parent") or not task.get("name", "").strip().startswith("#"):
+            continue
+        if (task.get("status") or {}).get("status", "").lower() == BUSY_STATUS:
+            return task
+    return None
+
+
 def main():
     my_id = get_my_id()
     print(f"[+] Watching list {LIST_ID} for {RUN_SECONDS:.0f}s (dry run: {DRY_RUN})", flush=True)
     end_time = time.time() + RUN_SECONDS
+    waiting_on = None
     while time.time() < end_time:
         try:
-            for task in unassigned_tasks():
-                if DRY_RUN:
+            # Claim at most one order per check, and only while you have none still in "new order".
+            # Your own orders are only looked up when there is something to claim, to save API calls.
+            task = next(unassigned_tasks(), None)
+            if task:
+                busy = current_open_order(my_id)
+                if busy:
+                    if waiting_on != busy["id"]:
+                        print(f"[WAIT] '{busy['name']}' is still '{BUSY_STATUS}', skipping new orders", flush=True)
+                        waiting_on = busy["id"]
+                    time.sleep(4)  # this check costs 2 API calls, so slow down to stay under the rate limit
+                elif DRY_RUN:
                     print(f"[DRY RUN] Would assign '{task['name']}' ({task['id']})", flush=True)
-                    continue
-                call("PUT", f"/task/{task['id']}", json={"assignees": {"add": [my_id]}})
-                print(f"[SUCCESS] Assigned '{task['name']}' ({task['id']})", flush=True)
+                else:
+                    call("PUT", f"/task/{task['id']}", json={"assignees": {"add": [my_id]}})
+                    print(f"[SUCCESS] Assigned '{task['name']}' ({task['id']})", flush=True)
+                    waiting_on = None
         except requests.RequestException as e:
             print(f"[-] Error: {e}")
         time.sleep(POLL_SECONDS)
