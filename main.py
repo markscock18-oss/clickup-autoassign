@@ -165,10 +165,20 @@ def main():
                 elif task and DRY_RUN:
                     print(f"[DRY RUN] Would assign '{task['name']}' ({task['id']})", flush=True)
                 elif task:
-                    call("PUT", f"/task/{task['id']}", json={"assignees": {"add": [my_id]}})
-                    remember_claimed(task["id"], state["claimed"])
                     state["last_serial"] = serial(task)
                     save_serial(state["last_serial"])
+                    # Re-check right before assigning, in case someone grabbed it a moment ago
+                    if call("GET", f"/task/{task['id']}").get("assignees"):
+                        print(f"[SKIP] '{task['name']}' was just taken by someone else", flush=True)
+                        continue
+                    call("PUT", f"/task/{task['id']}", json={"assignees": {"add": [my_id]}})
+                    remember_claimed(task["id"], state["claimed"])
+                    # If a teammate got it at the same moment, step back so you're never both on it
+                    others = [a for a in call("GET", f"/task/{task['id']}").get("assignees", []) if a.get("id") != my_id]
+                    if others:
+                        call("PUT", f"/task/{task['id']}", json={"assignees": {"rem": [my_id]}})
+                        print(f"[SKIP] '{task['name']}' was taken by {others[0].get('username')} at the same moment, removed you", flush=True)
+                        continue
                     print(f"[SUCCESS] Assigned '{task['name']}' ({task['id']})", flush=True)
                     busy = True  # the order you just got starts in "new order"
         except requests.RequestException as e:
