@@ -25,11 +25,28 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install requests
+      # Bring back what the bot remembers: orders it claimed and the highest order number seen
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            claimed_ids.txt
+            last_serial.txt
+          key: bot-memory-${{ github.run_id }}
+          restore-keys: bot-memory-
       - run: python main.py
         env:
           CLICKUP_TOKEN: ${{ secrets.CLICKUP_TOKEN }}
           CLICKUP_LIST_ID: '901525004358'
-          CREATED_AFTER_MS: '1790940825116'  # 2026-10-02 11:33 UTC: only orders created after this are claimed
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
           POLL_SECONDS: '1'
           RUN_SECONDS: '20700'  # ~5h45m, just under GitHub's 6-hour job limit
+      # Save the memory even when the run is cancelled (turned off)
+      - if: always()
+        run: touch claimed_ids.txt last_serial.txt
+      - if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            claimed_ids.txt
+            last_serial.txt
+          key: bot-memory-${{ github.run_id }}-${{ github.run_attempt }}
